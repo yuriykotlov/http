@@ -109,15 +109,40 @@ int win(const char* PORT){
         WSACleanup();
         return 1;
     }
+
+    std::cout << "init timeout\n";
+    
+    struct timeval timeout{};
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+
+    // sockets to check for activity
+    fd_set set{};
+    FD_SET(static_cast<u_int>(listen_socket), &set);
+
+    int activity = select(0, &set, nullptr, nullptr, &timeout);
+    if(activity == 0){
+        std::cerr << "Timeout for client connection.\n";
+        closesocket(listen_socket);
+        WSACleanup();
+        return 1;
+
+    } else if(activity == SOCKET_ERROR){
+        std::cerr << "Select error: " << WSAGetLastError() << '\n';
+        closesocket(listen_socket);
+        WSACleanup();
+        return 1;
+    }
     
     std::cout << "Running WinSock, waiting for client!";
 
     // all good so now wait to accept a client connection
+    SOCKET client_socket{ accept(listen_socket, nullptr, nullptr) };
 
-    SOCKET client_socket = accept(listen_socket, nullptr, nullptr);
     if(client_socket == INVALID_SOCKET){
         std::cerr << "Failed to accept client socket: " << WSAGetLastError() << '\n';
         closesocket(listen_socket);
+        WSACleanup();
         return 1;
     }
     
