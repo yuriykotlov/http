@@ -15,7 +15,7 @@
 
 constexpr uint16_t BUFFER_LEN{512};
 
-int process_client(SOCKET &client_socket){
+void process_client(SOCKET &client_socket){
     int recv_result{};
     int send_result{};
 
@@ -28,10 +28,8 @@ int process_client(SOCKET &client_socket){
         
         if(recv_result == SOCKET_ERROR){
             std::cerr << "Couldn't recieve from client: " << WSAGetLastError() << '\n';
-            return 1;
         } else if(recv_result == 0){
             std::cout << "Client disconnected.\n";
-            return 0;
         }
 
         std::cout << std::format("Bytes recieved: {}\n", recv_result);
@@ -40,30 +38,14 @@ int process_client(SOCKET &client_socket){
 
         if(send_result == SOCKET_ERROR){
             std::cerr << "Send back to client failed: " << WSAGetLastError() << '\n';
-            return 1;
         }
 
         std::cout << std::format("Sending bytes back to client: {}", send_result);
 
     } while(recv_result > 0);
-
-    return 0;
 }
 
-int win(const char* PORT){
-    WSADATA wsaData{};
-    
-    struct addrinfo *result{ nullptr }, hints{};
-
-    // init
-    int feedback{ WSAStartup(MAKEWORD(2, 2), &wsaData) };
-    if (feedback != 0){
-        std::cerr << std::format("WSAStartup failed: {}\n", feedback);
-
-        WSACleanup();
-        return 1;
-    }
-
+SOCKET create_listen_socket(const char* PORT, addrinfo *result, addrinfo &hints){
     hints.ai_family = AF_INET; // ipv4
     hints.ai_socktype = SOCK_STREAM; // tcp
     hints.ai_protocol = IPPROTO_TCP; // tcp
@@ -75,11 +57,11 @@ int win(const char* PORT){
     hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
     
     // resolve server address and port
-    feedback = getaddrinfo(nullptr, std::string{PORT}.c_str(), &hints, &result);
-    if (feedback != 0) {
-        std::cerr << std::format("getaddrinfo failed: {}\n", feedback);
+    int code{ getaddrinfo(nullptr, PORT, &hints, &result) };
+    if (code != 0) {
+        std::cerr << std::format("getaddrinfo failed: {}\n", code);
         WSACleanup();
-        return 1;
+        return INVALID_SOCKET;
     }
 
     // listen for client connections
@@ -88,26 +70,50 @@ int win(const char* PORT){
         std::cerr << "Listening socket is invalid: " << WSAGetLastError() << '\n';
         freeaddrinfo(result);
         WSACleanup();
-        return 1;
+        return INVALID_SOCKET;
     }
 
     // bind socket
-    feedback = bind(listen_socket, result->ai_addr, static_cast<int>(result->ai_addrlen));
-    if(feedback == SOCKET_ERROR){
+    code = bind(listen_socket, result->ai_addr, static_cast<int>(result->ai_addrlen));
+    if(code == SOCKET_ERROR){
         std::cerr << "Binding socket failed: " << WSAGetLastError() << '\n';
         freeaddrinfo(result);
         WSACleanup();
-        return 1;
+        return INVALID_SOCKET;
     }
 
     freeaddrinfo(result);
 
-    feedback = listen(listen_socket, SOMAXCONN);
-    if(feedback == SOCKET_ERROR){
+    code = listen(listen_socket, SOMAXCONN);
+    if(code == SOCKET_ERROR){
         std::cerr << "Socket failed to listen: " << WSAGetLastError() << '\n';
         closesocket(listen_socket);
         WSACleanup();
-        return 1;
+        return INVALID_SOCKET;
+    }
+
+    return listen_socket;
+}
+
+void win_init(const char* PORT){
+    WSADATA wsaData{};
+
+    // init
+    int feedback{ WSAStartup(MAKEWORD(2, 2), &wsaData) };
+    if (feedback != 0){
+        std::cerr << std::format("WSAStartup failed: {}\n", feedback);
+        WSACleanup();
+        return;
+    }
+    
+    struct addrinfo *result{ nullptr }, hints{};
+
+    SOCKET listen_socket{ create_listen_socket(PORT, result, hints) };
+
+    if(listen_socket == INVALID_SOCKET){
+        std::cerr << "Could not get listen_socket.\n";
+        WSACleanup();
+        return;
     }
 
     std::cout << "init timeout\n";
@@ -116,45 +122,41 @@ int win(const char* PORT){
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
 
-    // sockets to check for activity
+    // sockets to be checked for activity
     fd_set set{};
-    FD_SET(static_cast<u_int>(listen_socket), &set);
+    FD_SET(listen_socket, &set);
 
     int activity = select(0, &set, nullptr, nullptr, &timeout);
     if(activity == 0){
         std::cerr << "Timeout for client connection.\n";
         closesocket(listen_socket);
         WSACleanup();
-        return 1;
+        return;
 
     } else if(activity == SOCKET_ERROR){
         std::cerr << "Select error: " << WSAGetLastError() << '\n';
         closesocket(listen_socket);
         WSACleanup();
-        return 1;
+        return;
     }
     
     std::cout << "Running WinSock, waiting for client!";
 
     // all good so now wait to accept a client connection
     SOCKET client_socket{ accept(listen_socket, nullptr, nullptr) };
-
     if(client_socket == INVALID_SOCKET){
         std::cerr << "Failed to accept client socket: " << WSAGetLastError() << '\n';
         closesocket(listen_socket);
         WSACleanup();
-        return 1;
     }
     
     // done listening for a client as we have connected now
     closesocket(listen_socket);
     
-    int process_result = process_client(client_socket);
+    process_client(client_socket);
 
     closesocket(client_socket);
     WSACleanup();
-
-    return process_result;
 }
 
 #endif

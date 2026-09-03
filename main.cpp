@@ -14,7 +14,8 @@ constexpr int* a{};
 
 int main(){
     #ifdef _WIN32
-        return win(DEFAULT_PORT);
+        win_init(DEFAULT_PORT);
+        return 0;
     #else
         return 0;
     #endif

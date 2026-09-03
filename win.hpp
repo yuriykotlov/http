@@ -1,6 +1,6 @@
 #ifndef WIN_HPP
 #define WIN_HPP
 
-int win(const char* PORT);
+void win_init(const char* PORT);
 
 #endif
