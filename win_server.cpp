@@ -1,14 +1,14 @@
 #ifdef _WIN32
 
-#include "win.hpp"
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include "win_server.hpp"
 
 #include <iostream>
 #include <format>
 #include <string>
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -27,7 +27,7 @@ void process_connection(SOCKET &client_socket){
         recv_result = recv(client_socket, buffer, BUFFER_LEN, 0);
         
         if(recv_result == SOCKET_ERROR){
-            std::cerr << "Couldn't recieve from client: " << WSAGetLastError() << '\n';
+            std::cout << std::format("Couldn't recieve from client: {}\n", WSAGetLastError());
         } else if(recv_result == 0){
             std::cout << "Client disconnected.\n";
         }
@@ -37,10 +37,10 @@ void process_connection(SOCKET &client_socket){
         send_result = send(client_socket, buffer, recv_result, 0);
 
         if(send_result == SOCKET_ERROR){
-            std::cerr << "Send back to client failed: " << WSAGetLastError() << '\n';
+            std::cout << std::format("Send back to client failed: {}\n", WSAGetLastError());
         }
 
-        std::cout << std::format("Sending bytes back to client: {}", send_result);
+        std::cout << std::format("Sending bytes back to client: {}\n", send_result);
 
     } while(recv_result > 0);
 }
@@ -59,9 +59,9 @@ SOCKET create_listen_socket(const char* const &PORT){
     hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
     
     // resolve server address and port
-    int code{ getaddrinfo(nullptr, PORT, &hints, &result) };
-    if (code != 0) {
-        std::cerr << std::format("getaddrinfo failed: {}\n", code);
+    int feedback{ getaddrinfo(nullptr, PORT, &hints, &result) };
+    if (feedback != 0) {
+        std::cerr << std::format("getaddrinfo failed: {}\n", feedback);
         WSACleanup();
         return INVALID_SOCKET;
     }
@@ -69,7 +69,7 @@ SOCKET create_listen_socket(const char* const &PORT){
     // listen for client connections
     SOCKET listen_socket{ socket(result->ai_family, result->ai_socktype, result->ai_protocol) };
     if (listen_socket == INVALID_SOCKET) {
-        std::cerr << "Listening socket is invalid: " << WSAGetLastError() << '\n';
+        std::cerr << std::format("Listening socket is invalid: {}\n", WSAGetLastError());
         freeaddrinfo(result);
         WSACleanup();
         return INVALID_SOCKET;
@@ -77,7 +77,7 @@ SOCKET create_listen_socket(const char* const &PORT){
 
     // bind socket
     if(bind(listen_socket, result->ai_addr, static_cast<int>(result->ai_addrlen)) == SOCKET_ERROR){
-        std::cerr << "Binding socket failed: " << WSAGetLastError() << '\n';
+        std::cerr << std::format("Binding socket failed: {}\n", WSAGetLastError());
         freeaddrinfo(result);
         WSACleanup();
         return INVALID_SOCKET;
@@ -86,7 +86,7 @@ SOCKET create_listen_socket(const char* const &PORT){
     freeaddrinfo(result);
 
     if(listen(listen_socket, SOMAXCONN) == SOCKET_ERROR){
-        std::cerr << "Socket failed to listen: " << WSAGetLastError() << '\n';
+        std::cerr << std::format("Socket failed to listen: {}\n", WSAGetLastError());
         closesocket(listen_socket);
         WSACleanup();
         return INVALID_SOCKET;
@@ -95,7 +95,7 @@ SOCKET create_listen_socket(const char* const &PORT){
     return listen_socket;
 }
 
-void win_init(const char* const& PORT){
+void win_server(const char* const& PORT){
     WSADATA wsaData{};
 
     // init
@@ -105,6 +105,8 @@ void win_init(const char* const& PORT){
         WSACleanup();
         return;
     }
+
+    std::cout << "\n### server started ###\n";
 
     SOCKET listen_socket{ create_listen_socket(PORT) };
 
@@ -132,7 +134,7 @@ void win_init(const char* const& PORT){
         return;
 
     } else if(activity == SOCKET_ERROR){
-        std::cerr << "Select error: " << WSAGetLastError() << '\n';
+        std::cerr << std::format("Select error: {}\n", WSAGetLastError());
         closesocket(listen_socket);
         WSACleanup();
         return;
